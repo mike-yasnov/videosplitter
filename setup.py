@@ -12,7 +12,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "videosplitter = split_videos:main",
+            "videosplitter = videosplitter.__main__:main",
         ],
     },
 )

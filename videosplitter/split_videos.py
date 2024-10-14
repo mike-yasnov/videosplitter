@@ -9,10 +9,15 @@ import streamlit.components.v1 as components
 import threading
 import platform
 import time
+import concurrent.futures
+import logging
 
 import rich
 from rich.tree import Tree
 from rich.console import Console
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def parse_timecodes(timecodes_str):
     pattern = r"(\d{2}:\d{2}-\d{2}:\d{2})"
@@ -25,7 +30,7 @@ def parse_timecodes(timecodes_str):
         timecodes.append((start, end))
     return timecodes
 
-def split_video_by_timecodes(video_path, timecodes, step):
+def split_video_by_timecodes(video_path, timecodes, step, codec='mp4v', quality=95):
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -45,7 +50,7 @@ def split_video_by_timecodes(video_path, timecodes, step):
         
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         output_filename = output_dir / f"{video_name}_part_{i+1}.mp4"
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*codec)
         out = cv2.VideoWriter(str(output_filename), fourcc, fps, (
             int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -60,15 +65,15 @@ def split_video_by_timecodes(video_path, timecodes, step):
                 break
             out.write(frame)
             frame_filename = frame_output_dir / f"frame_{frame_num}.jpg"
-            cv2.imwrite(str(frame_filename), frame)
+            cv2.imwrite(str(frame_filename), frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         out.release()
         
         progress = int(((i + 1) / total_parts) * 100)
         progress_bar.progress(progress)
-        status_text.text(f"Processing part {i + 1} of {total_parts}...")
+        status_text.text(f"Обработка части {i + 1} из {total_parts}...")
     
     progress_bar.progress(100)
-    status_text.text("Processing complete!")
+    status_text.text("Обработка завершена!")
     cap.release()
 
 def zip_output_folder(video_name):
@@ -93,18 +98,21 @@ def render_directory_tree(path):
 
 def select_folder():
     root_path = Path.home()
-    current_path = st.sidebar.text_input("Enter the path to the folder containing videos:", value=str(root_path))
+    current_path = st.sidebar.text_input("Введите путь к папке с видео:", value=str(root_path))
     current_path_obj = Path(current_path)
     if current_path_obj.exists() and current_path_obj.is_dir():
         folder_tree = render_directory_tree(current_path_obj)
         st.sidebar.text(folder_tree)
         return current_path
     else:
-        st.sidebar.error("Invalid path. Please enter a valid directory path.")
+        st.sidebar.error("Неверный путь. Пожалуйста, введите правильный путь к папке.")
         return None
 
+# Streamlit App Customization
+st.set_page_config(page_title="Разделитель видео", page_icon=":scissors:", layout="wide")
+
 # Streamlit App
-st.title("Video Splitter by Timecodes")
+st.title("🎥 Разделитель видео по таймкодам")
 
 # Folder input using a text input in the sidebar
 selected_folder = select_folder()
@@ -113,37 +121,32 @@ if selected_folder:
     input_folder = selected_folder
     input_path = Path(input_folder)
     if not input_path.exists() or not input_path.is_dir():
-        st.error("Invalid folder path.")
+        st.error("Неверный путь к папке.")
     else:
         video_files = list(input_path.glob("*.mp4")) + list(input_path.glob("*.avi")) + list(input_path.glob("*.mov")) + list(input_path.glob("*.mkv"))
         if not video_files:
-            st.warning("No supported video files (.mp4, .avi, .mov, .mkv) found in the specified folder.")
+            st.warning("В указанной папке не найдено поддерживаемых видеофайлов (.mp4, .avi, .mov, .mkv).")
         else:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = []
+                for video_file in video_files:
+                    st.header(f"📁 Обработка {video_file.name}")
+                    timecodes_str = st.text_input(f"Введите таймкоды для {video_file.name} (например, 00:43-00:52, 01:31-02:09):")
+                    step = st.number_input(f"Введите шаг для сохранения кадров для {video_file.name} (например, 1 для каждого кадра, 2 для каждого второго кадра):", min_value=1, value=1)
+                    codec = st.selectbox(f"Выберите кодек для {video_file.name}:", ["mp4v", "XVID", "MJPG", "X264"])
+                    quality = st.slider(f"Выберите качество выходных кадров для {video_file.name} (1-100):", min_value=1, max_value=100, value=95)
+                    if timecodes_str:
+                        timecodes = parse_timecodes(timecodes_str)
+                        futures.append(executor.submit(split_video_by_timecodes, video_file, timecodes, step, codec, quality))
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()  # Обрабатываем возможные исключения
+
             for video_file in video_files:
-                st.header(f"Processing {video_file.name}")
-                timecodes_str = st.text_input(f"Enter timecodes for {video_file.name} (e.g., 00:43-00:52, 01:31-02:09):")
-                step = st.number_input(f"Enter step for saving frames for {video_file.name} (e.g., 1 for every frame, 2 for every second frame):", min_value=1, value=1)
-                if timecodes_str:
-                    timecodes = parse_timecodes(timecodes_str)
-                    if 'processing_done' not in st.session_state:
-                        split_video_by_timecodes(video_file, timecodes, step)
-                        st.session_state['processing_done'] = True
-                    zip_file = zip_output_folder(video_file.stem)
-                    st.success(f"Finished processing {video_file.name}")
-                    st.download_button(
-                        label="Download ZIP file",
-                        data=open(zip_file, "rb").read(),
-                        file_name=zip_file.name,
-                        mime="application/zip"
-                    )
-
-# To run the app with a simple command
-def main():
-    import subprocess
-    import sys
-    command = [sys.executable, "-m", "streamlit", "run", "videosplitter/split_videos.py"]
-    subprocess.run(command)
-
-if __name__ == "__main__":
-    main()
-
+                zip_file = zip_output_folder(video_file.stem)
+                st.success(f"Обработка завершена для {video_file.name}")
+                st.download_button(
+                    label="📥 Скачать ZIP-файл",
+                    data=open(zip_file, "rb").read(),
+                    file_name=zip_file.name,
+                    mime="application/zip"
+                )
