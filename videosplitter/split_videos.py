@@ -78,7 +78,7 @@ def split_video_by_timecodes(video_path, timecodes, step, codec='mp4v', quality=
 
 def zip_output_folder(video_name):
     output_dir = Path("output") / video_name
-    zip_filename = Path("output") / f"{re.sub(r'[:"<>|?*]', '_', video_name)}.zip"
+    zip_filename = Path("output") / (re.sub(r'[:"<>|?*]', '_', video_name) + ".zip")
     with zipfile.ZipFile(zip_filename, 'w') as zipf:
         for root, _, files in os.walk(output_dir):
             for file in files:
