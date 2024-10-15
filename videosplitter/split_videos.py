@@ -37,7 +37,7 @@ def split_video_by_timecodes(video_path, timecodes, step, codec='mp4v', quality=
     duration = frame_count / fps
     
     video_name = Path(video_path).stem
-    output_dir = Path("output") / video_name
+    output_dir = Path("output") / re.sub(r'[:"<>|?*]', '_', video_name)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     progress_bar = st.progress(0)
@@ -56,7 +56,7 @@ def split_video_by_timecodes(video_path, timecodes, step, codec='mp4v', quality=
             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         ))
         
-        frame_output_dir = output_dir / f"frames_part_{i+1}"
+        frame_output_dir = output_dir / re.sub(r'[:"<>|?*]', '_', f"frames_part_{i+1}")
         frame_output_dir.mkdir(parents=True, exist_ok=True)
         
         for frame_num in range(start_frame, end_frame, step):
@@ -78,7 +78,7 @@ def split_video_by_timecodes(video_path, timecodes, step, codec='mp4v', quality=
 
 def zip_output_folder(video_name):
     output_dir = Path("output") / video_name
-    zip_filename = Path("output") / f"{video_name}.zip"
+    zip_filename = Path("output") / f"{re.sub(r'[:"<>|?*]', '_', video_name)}.zip"
     with zipfile.ZipFile(zip_filename, 'w') as zipf:
         for root, _, files in os.walk(output_dir):
             for file in files:
@@ -135,7 +135,7 @@ if selected_folder:
                 if timecodes_str and f'processing_{video_file.stem}' not in st.session_state:
                     timecodes = parse_timecodes(timecodes_str)
                     split_video_by_timecodes(video_file, timecodes, step, codec, quality)
-                    zip_file = zip_output_folder(video_file.stem) if Path(f'output/{video_file.stem}').exists() else None
+                    zip_file = zip_output_folder(re.sub(r'[:"<>|?*]', '_', video_file.stem)) if Path(f'output/{video_file.stem}').exists() else None
                     st.session_state[f'processing_{video_file.stem}'] = True
                     st.success(f"Обработка завершена для {video_file.name}")
                     if zip_file:
