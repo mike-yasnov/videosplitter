@@ -83,6 +83,13 @@ def zip_output_folder(video_name):
         for root, _, files in os.walk(output_dir):
             for file in files:
                 zipf.write(os.path.join(root, file), arcname=file)
+    # Удаление папки с кадрами после создания архива
+    for root, dirs, files in os.walk(output_dir, topdown=False):
+        for file in files:
+            os.remove(os.path.join(root, file))
+        for dir in dirs:
+            os.rmdir(os.path.join(root, dir))
+    os.rmdir(output_dir)
     return zip_filename
 
 def render_directory_tree(path):
@@ -129,15 +136,16 @@ if selected_folder:
         else:
             for video_file in video_files:
                 timecodes_str = st.text_input(f"Введите таймкоды для {video_file.name} (например, 00:43-00:52, 01:31-02:09):", key=f"timecodes_{video_file.stem}")
-                step = st.number_input(f"Введите шаг для сохранения кадров для {video_file.name} (например, 1 для каждого кадра, 2 для каждого второго кадра):", min_value=1, value=1, key=f"step_{video_file.stem}")
-                quality = st.slider(f"Выберите качество выходных кадров для {video_file.name} (1-100):", min_value=1, max_value=100, value=95, key=f"quality_{video_file.stem}")
-                codec = st.selectbox(f"Выберите кодек для {video_file.name}:", ["mp4v", "XVID", "MJPG", "X264"], key=f"codec_{video_file.stem}")
-                if timecodes_str and f'processing_{video_file.stem}' not in st.session_state:
-                    timecodes = parse_timecodes(timecodes_str)
-                    split_video_by_timecodes(video_file, timecodes, step, codec, quality)
-                    zip_file = zip_output_folder(re.sub(r'[:"<>|?*]', '_', video_file.stem)) if Path(f'output/{video_file.stem}').exists() else None
-                    st.session_state[f'processing_{video_file.stem}'] = True
-                    st.success(f"Обработка завершена для {video_file.name}")
+                if timecodes_str:
+                    step = st.number_input(f"Введите шаг для сохранения кадров для {video_file.name} (например, 1 для каждого кадра, 2 для каждого второго кадра):", min_value=1, value=1, key=f"step_{video_file.stem}")
+                    quality = st.slider(f"Выберите качество выходных кадров для {video_file.name} (1-100):", min_value=1, max_value=100, value=95, key=f"quality_{video_file.stem}")
+                    codec = st.selectbox(f"Выберите кодек для {video_file.name}:", ["mp4v", "XVID", "MJPG", "X264"], key=f"codec_{video_file.stem}")
+                    if f'processing_{video_file.stem}' not in st.session_state:
+                        timecodes = parse_timecodes(timecodes_str)
+                        split_video_by_timecodes(video_file, timecodes, step, codec, quality)
+                        zip_file = zip_output_folder(re.sub(r'[:"<>|?*]', '_', video_file.stem)) if Path(f'output/{video_file.stem}').exists() else None
+                        st.session_state[f'processing_{video_file.stem}'] = True
+                        st.success(f"Обработка завершена для {video_file.name}")
                     if zip_file:
                         st.download_button(
                             label="📥 Скачать ZIP-файл",
